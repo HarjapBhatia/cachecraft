@@ -1,4 +1,4 @@
-# CacheCraft: Distributed Cache Topology and Saturation Analysis (Go Edition)
+# CacheCraft: Distributed Cache Topology and Saturation Analysis
 
 ## 1. Abstract
 CacheCraft is an empirical research and benchmarking platform designed to analyze database connection pool exhaustion under high-concurrency read operations. By orchestrating a multi-node cluster behind an Nginx load balancer, the framework evaluates the mechanics of progressive caching strategies:
