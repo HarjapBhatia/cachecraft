@@ -98,8 +98,11 @@ export default function (data) {
 export function handleSummary(data) {
     const totalReqs = data.metrics.http_reqs ? data.metrics.http_reqs.values.count : 0;
     const hitRateValue = data.metrics.cache_hit_rate ? data.metrics.cache_hit_rate.values.rate : 0;
-    const hitCount = Math.round(totalReqs * hitRateValue);
-    const missCount = totalReqs - hitCount - (data.metrics.error_rate ? data.metrics.error_rate.values.count : 0);
+
+    const hitCount = data.metrics.cache_hit_rate ? (data.metrics.cache_hit_rate.values.passes || 0) : 0;
+    const missCount = data.metrics.cache_hit_rate ? (data.metrics.cache_hit_rate.values.fails || 0) : 0;
+    const totalErrors = data.metrics.error_rate ? (data.metrics.error_rate.values.passes || 0) : 0;
+    const errors503 = data.metrics.http_503_errors ? (data.metrics.http_503_errors.values.passes || 0) : 0;
 
     console.log('\n======================================================');
     console.log('CacheCraft Avalanche Execution Summary');
@@ -122,8 +125,8 @@ export function handleSummary(data) {
     console.log(`Cache Hit Rate: ${(hitRateValue * 100).toFixed(2)}%`);
     console.log(`Cache Hits: ${hitCount}`);
     console.log(`Cache Misses (X-Cache: MISS): ${missCount}`);
-    console.log(`Total Errors: ${data.metrics.error_rate ? data.metrics.error_rate.values.count : 0}`);
-    console.log(`HTTP 503 Errors (Pool Exhausted/Lock Timeout): ${data.metrics.http_503_errors ? data.metrics.http_503_errors.values.count : 0}`);
+    console.log(`Total Errors: ${totalErrors}`);
+    console.log(`HTTP 503 Errors (Pool Exhausted/Lock Timeout): ${errors503}`);
     console.log('======================================================\n');
     return {};
 }
