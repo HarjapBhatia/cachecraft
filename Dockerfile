@@ -20,7 +20,7 @@
 # ==============================================================================
 # Stage 1: Build the Go binary
 # ==============================================================================
-FROM golang:1.24-alpine AS builder
+FROM golang:alpine AS builder
 
 # Set working directory inside the container
 WORKDIR /build
@@ -29,6 +29,7 @@ WORKDIR /build
 # Docker caches layers: if go.mod and go.sum have not changed,
 # Docker reuses the cached downloaded dependencies layer.
 COPY go.mod go.sum ./
+ENV GOTOOLCHAIN=auto
 RUN go mod download
 
 # Copy the rest of the application source code
