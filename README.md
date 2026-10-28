@@ -179,7 +179,65 @@ bash ./run-test.sh type=avalanche strat=cache-aside-jitter ttl=5 delay=5 jitter=
 
 ---
 
-## 6. Project Layout
+## 6. Empirical Benchmark Results & Architectural Analysis
+
+The following empirical benchmark matrix documents live tests executed against the 3-node Go cluster running behind the Nginx round-robin load balancer, PostgreSQL 16 (10,000 seeded items), and Redis 7.
+
+### 6.1. Master Benchmark Results Table
+
+| Exp # | Experiment Scenario | Strategy (`strat`) | Concurrency (VUs) | Target Topology | DB Delay | Throughput | p50 Latency | p95 Latency | Max Latency | Cache Hit Rate | HTTP 503 Errors | DB Queries Delta (API 1 \| 2 \| 3) |
+| :---: | :--- | :--- | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **1** | **Baseline Maximum Ceiling** | `cache-aside` | 10 (Sustained 10s) | Nginx (3 Nodes) | 0ms | 1,165.5 req/s | 7.8 ms | 15.0 ms | 38.1 ms | 99.95% | 0 | **+6** (+2 \| +2 \| +2) |
+| **2A** | **Single-Node Pool Starvation** | `no-cache` | 200 (Burst) | API-1 Direct | 250ms | 94.8 req/s | 1,376.5 ms | 2,030.8 ms | 2,046.4 ms | 0.00% | 0 | **+200** (+200 \| +0 \| +0) |
+| **2B** | **Cluster-Wide Pool Starvation** | `no-cache` | 600 (Burst) | Nginx (3 Nodes) | 250ms | 241.3 req/s | 1,416.4 ms | 2,199.5 ms | 2,266.2 ms | 0.00% | **118** | **+600** (+200 \| +200 \| +200) |
+| **3** | **Naive Cache-Aside Stampede** | `cache-aside` | 600 (Burst) | Nginx (3 Nodes) | 250ms | 241.5 req/s | 1,650.4 ms | 2,216.3 ms | 2,322.2 ms | 0.00% | **192** | **+600** (+200 \| +200 \| +200) |
+| **4** | **Local Single-Flight Coalescing** | `local-single-flight` | 600 (Burst) | Nginx (3 Nodes) | 250ms | 1,109.4 req/s | 316.0 ms | 408.8 ms | 417.1 ms | 0.00% | **0** | **+3** (+1 \| +1 \| +1) |
+| **5** | **Redis Distributed Lock** | `distributed-lock` | 600 (Burst) | Nginx (3 Nodes) | 250ms | 735.2 req/s | 502.8 ms | 653.3 ms | 680.0 ms | 99.83% | **0** | **+1** (+0 \| +1 \| +0) |
+| **6** | **Distributed Lock (Single Node)** | `distributed-lock` | 600 (Burst) | API-1 Direct | 250ms | 1,023.3 req/s | 331.3 ms | 391.2 ms | 405.3 ms | 99.83% | **0** | **+1** (+1 \| +0 \| +0) |
+| **7** | **Zero-Delay Cache Stampede** | `cache-aside` | 600 (Burst) | Nginx (3 Nodes) | 0ms | 919.4 req/s | 297.8 ms | 438.5 ms | 462.5 ms | 98.67% | **0** | **+8** (+3 \| +3 \| +2) |
+| **8** | **High-Stress 1,000 VUs Lock** | `distributed-lock` | 1,000 (Burst) | Nginx (3 Nodes) | 250ms | 831.7 req/s | 435.5 ms | 566.8 ms | 586.8 ms | 99.90% | **0** | **+1** (+0 \| +1 \| +0) |
+| **9** | **Synchronized Expiry Avalanche** | `cache-aside` (Jitter=0.0) | 500 (2000 req/s) | Nginx (3 Nodes) | 5ms | 638.7 req/s | 445.1 ms | 848.5 ms | 3,419.6 ms | 33.89% | **10** | **+6,102** (+2065 \| +2046 \| +1991) |
+| **10** | **Stochastic TTL Jitter Defense** | `cache-aside-jitter` (Jitter=0.10) | 500 (2000 req/s) | Nginx (3 Nodes) | 5ms | 683.5 req/s | 394.4 ms | 780.8 ms | 1,347.9 ms | 35.78% | **0** | **+6,276** (+2074 \| +2106 \| +2096) |
+
+---
+
+### 6.2. Deep Dive: Architectural Whys & Engineering Takeaways
+
+#### 1. Connection Pool Exhaustion Mechanics (Experiments 2A & 2B)
+* **The "What"**: Under 600 concurrent un-cached requests (`strat=no-cache`) with an artificial 250ms query delay, **118 requests timed out with HTTP 503 `DATABASE_CONNECTION_TIMEOUT`**, and max latency breached 2.26 seconds.
+* **The "Why"**: Each Go API instance enforces a hard ceiling of 20 connections (`db.SetMaxOpenConns(20)`), establishing 60 total database connections cluster-wide. Under a 2,000ms context deadline (`context.WithTimeout`), each connection can complete at most $2000 / 250 = 8$ queries before the deadline expires ($20 \times 8 = 160$ queries per instance, 480 global). The remaining 120 requests queued in memory until their context deadlines were breached.
+
+#### 2. The Fallacy of Naive Cache-Aside on Cold Keys (Experiment 3)
+* **The "What"**: In standard Cache-Aside, querying a cold key under 600 concurrent requests resulted in **600 database queries** (+200 on each node) and **192 HTTP 503 failures**—identical to having no cache at all.
+* **The "Why"**: Because all 600 requests arrived in the same millisecond burst before the first query could finish its 250ms database round-trip and populate Redis, all 600 requests simultaneously observed a cache miss. Having a cache provides zero protection against cold-start bursts without concurrency coalescing.
+
+#### 3. In-Memory Single-Flight vs. Cluster Distributed Locking (Experiments 4 & 5)
+* **Local Single-Flight (`golang.org/x/sync/singleflight`)**:
+  - **Result**: Collapsed 600 requests into **strictly 3 database queries** (+1 on API 1, +1 on API 2, +1 on API 3).
+  - **Latency & Errors**: 0 errors, max latency dropped by 82% from 2,322ms to 417ms.
+  - **Limitation**: `singleflight` operates exclusively in-memory within a single Go process. It cannot coordinate across network boundaries between distinct microservice containers.
+* **Redis Distributed Locking (`SET NX PX` + Lua atomic release)**:
+  - **Result**: Collapsed 600 requests into **strictly 1 database query globally** (+0 on API 1, +1 on API 2, +0 on API 3).
+  - **Coordination**: The winning leader executed the query and unlocked via Lua; all other 599 goroutines across all 3 nodes polled Redis with exponential jitter and served the cached response with a 99.83% cache hit rate.
+
+#### 4. The Sub-Millisecond Database Myth (Experiment 7)
+* **The "What"**: Even with a **0ms query delay** (sub-millisecond PostgreSQL response), naive Cache-Aside still allowed **8 database queries** to penetrate (+3 on API 1, +3 on API 2, +2 on API 3).
+* **The "Why"**: The race window between checking Redis, executing a native SQL query, and writing the result to Redis is non-zero (1–2ms). Under concurrent arrival, parallel requests still slip through before the cache write completes. Fast databases do not eliminate stampedes.
+
+#### 5. Cache Avalanche Mitigation via Stochastic TTL Jitter (Experiments 9 & 10)
+* **The "What"**: When 10,000 keys expired at the identical millisecond (Jitter = 0.0), a sudden spike of 6,102 queries slammed PostgreSQL within seconds. Hit rate plummeted to 33.89%, max latency exploded to **3,419.59 ms** (3.42s), and 10 requests timed out with HTTP 503.
+* **The "Why"**: Applying symmetric uniform random variation:
+  $$TTL_{\text{effective}} = TTL_{\text{base}} \times \left(1.0 + \text{rand}(-0.10, +0.10)\right)$$
+  desynchronized key expirations over a 1-second temporal band ($[4.5\text{s}, 5.5\text{s}]$).
+* **The Result**:
+  - **100% elimination of HTTP 503 errors** (dropped from 10 to 0).
+  - **60.6% reduction in max latency** (dropped from 3,420ms to 1,348ms).
+  - **33.4% reduction in p99 latency** (dropped from 1,524ms to 1,014ms).
+  - Sustained higher request throughput (+45 req/s).
+
+---
+
+## 7. Project Layout
 
 ```text
 CacheCraft/
