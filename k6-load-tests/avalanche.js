@@ -1,22 +1,4 @@
-// avalanche.js
-// Simulates a cache avalanche event resulting from synchronized key expirations.
-//
-// WHAT THIS SCRIPT TESTS:
-// A cache avalanche occurs when a large batch of cached items expire at the
-// exact same moment. When subsequent traffic arrives, all requests result in
-// cache misses simultaneously, causing a thundering herd against the database.
-//
-// MITIGATION TESTED:
-// By introducing stochastic uniform TTL jitter (e.g. +/- 10%), key expirations
-// are distributed across a time window rather than occurring all at once.
-// This desynchronizes the cache misses and smooths the query rate on PostgreSQL.
-//
-// K6 SETUP HOOK:
-//   1. Calls POST /debug/cache/reset to clear Redis.
-//   2. Calls POST /debug/cache/bulk-warm?ttl={ttl} to populate 10,000 keys with
-//      an identical absolute expiration millisecond timestamp.
-//   3. Sleeps until 1 second before expiry, then begins generating 2,000 req/s.
-
+// avalanche.js - Simulates synchronized key expiration cache avalanche dynamics.
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Rate } from 'k6/metrics';

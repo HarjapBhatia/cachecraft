@@ -1,16 +1,4 @@
-// baseline.js
-// Measures the maximum performance ceiling when operating entirely from a warm cache.
-//
-// WHAT THIS SCRIPT TESTS:
-// This experiment establishes the optimal baseline performance of the Go API
-// and Nginx load balancer when the database is completely bypassed (100% cache hits).
-//
-// HOW K6 EXECUTES THIS:
-//   - 10 Virtual Users (VUs) send requests continuously for 10 seconds.
-//   - Every request targets a pre-warmed item (e.g. /api/items/42).
-//   - Checks that status is 200 and captures X-Cache header (HIT vs MISS).
-//   - Reports throughput, p50, p95, p99 latency, and cache hit rate.
-
+// baseline.js - Measures warm cache ceiling performance under constant load.
 import http from 'k6/http';
 import { check } from 'k6';
 import { Rate } from 'k6/metrics';

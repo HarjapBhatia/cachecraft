@@ -1,18 +1,4 @@
-// stampede.js
-// Simulates a high-concurrency cache stampede on a single cold key.
-//
-// WHAT THIS SCRIPT TESTS:
-// A cache stampede occurs when high concurrent traffic requests a single item
-// that is absent from Redis (a cold key or just-expired key).
-//
-// CONCURRENCY MECHANICS:
-//   - Uses executor: 'per-vu-iterations' where all VUs (e.g. 200 or 600) fire
-//     their request simultaneously in a single burst.
-//   - Without coalescing, all requests attempt to acquire a database connection,
-//     saturating the pool (20 connections) and triggering 503 timeouts.
-//   - With local single-flight, requests on each node coalesce to 1 query per node.
-//   - With distributed lock, requests across the entire cluster coalesce to strictly 1 query.
-
+// stampede.js - Simulates a high-concurrency cache stampede on a cold key.
 import http from 'k6/http';
 import { check } from 'k6';
 import { Rate } from 'k6/metrics';
