@@ -69,6 +69,23 @@ Write-Host "  TTL:        ${TTL}s"
 Write-Host "  Jitter:     $Jitter"
 Write-Host "======================================================"
 
+# Pre-flight check: ensure the cluster is running and reachable
+try {
+    $null = Invoke-RestMethod -Uri "$baseUrl/debug/db-queries" -Method Get -TimeoutSec 2 -ErrorAction Stop
+} catch {
+    Write-Host ""
+    Write-Host "ERROR: Cannot connect to CacheCraft cluster at $baseUrl (Connection Refused)." -ForegroundColor Red
+    Write-Host "The containers are not running or still starting up." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "To start the cluster, run:" -ForegroundColor Cyan
+    Write-Host "  docker compose up --build -d" -ForegroundColor White
+    Write-Host ""
+    Write-Host "To check container status, run:" -ForegroundColor Cyan
+    Write-Host "  docker compose ps" -ForegroundColor White
+    Write-Host ""
+    exit 1
+}
+
 # Helper function to fetch query counter from an API node
 function Get-QueryCount([int]$port) {
     try {

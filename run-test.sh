@@ -79,6 +79,21 @@ echo "  TTL:        ${TTL}s"
 echo "  Jitter:     $JITTER"
 echo "======================================================"
 
+# Pre-flight check: ensure the cluster is running and reachable
+if ! curl -s -f -o /dev/null --connect-timeout 2 "$BASE_URL/debug/db-queries" 2>/dev/null; then
+    echo ""
+    echo "ERROR: Cannot connect to CacheCraft cluster at $BASE_URL (Connection Refused)."
+    echo "The containers are not running or still starting up."
+    echo ""
+    echo "To start the cluster, run:"
+    echo "  docker compose up --build -d"
+    echo ""
+    echo "To check container status, run:"
+    echo "  docker compose ps"
+    echo ""
+    exit 1
+fi
+
 # Fetches the dbQueryCount integer from a specific API instance by port
 get_query_count() {
     local port=$1
