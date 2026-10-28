@@ -1,0 +1,110 @@
+# docker-compose.yml
+# Orchestrates the local cluster topology for CacheCraft distributed cache experiments.
+#
+# TOPOLOGY OVERVIEW:
+# 1. Database Layer:
+#    - postgres: PostgreSQL 16 Alpine container with 10,000 deterministic seeded items.
+# 2. Cache Layer:
+#    - redis: Redis 7 Alpine container for distributed caching, locking, and pipelining.
+# 3. Application Layer:
+#    - api-1: Go API instance 1 (accessible directly on port 8081)
+#    - api-2: Go API instance 2 (accessible directly on port 8082)
+#    - api-3: Go API instance 3 (accessible directly on port 8083)
+# 4. Load Balancer Layer:
+#    - nginx: Reverse proxy distributing incoming traffic on port 8080 across all 3 API instances.
+#
+# HOW DATABASE INITIALIZATION WORKS:
+# PostgreSQL automatically executes all .sql scripts placed in the
+# /docker-entrypoint-initdb.d/ directory in alphabetical order during initial container setup.
+# We mount schema.sql (01) and data.sql (02) so the 10,000 seeded items are created automatically.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: cachecraft
+      POSTGRES_USER: cachecraft
+      POSTGRES_PASSWORD: cachecraft
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cachecraft -d cachecraft"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./scripts/data.sql:/docker-entrypoint-initdb.d/02-data.sql:ro
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - redis-data:/data
+
+  # Base template anchor (&api) reused by api-1, api-2, and api-3.
+  # This avoids repeating identical configuration for each node.
+  api-1: &api
+    build: .
+    environment:
+      CACHECRAFT_INSTANCE_NAME: api-1
+      PORT: "8080"
+      DATABASE_URL: postgres://cachecraft:cachecraft@postgres:5432/cachecraft?sslmode=disable
+      REDIS_ADDR: redis:6379
+      DB_MAX_CONNS: "20"
+      DB_CONN_TIMEOUT_MS: "2000"
+      DEFAULT_TTL_SECONDS: "30"
+      DEFAULT_JITTER: "0.10"
+      LOCK_LEASE_MS: "5000"
+      CACHECRAFT_ENV: local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports: ["8081:8080"]
+
+  api-2:
+    <<: *api
+    environment:
+      CACHECRAFT_INSTANCE_NAME: api-2
+      PORT: "8080"
+      DATABASE_URL: postgres://cachecraft:cachecraft@postgres:5432/cachecraft?sslmode=disable
+      REDIS_ADDR: redis:6379
+      DB_MAX_CONNS: "20"
+      DB_CONN_TIMEOUT_MS: "2000"
+      DEFAULT_TTL_SECONDS: "30"
+      DEFAULT_JITTER: "0.10"
+      LOCK_LEASE_MS: "5000"
+      CACHECRAFT_ENV: local
+    ports: ["8082:8080"]
+
+  api-3:
+    <<: *api
+    environment:
+      CACHECRAFT_INSTANCE_NAME: api-3
+      PORT: "8080"
+      DATABASE_URL: postgres://cachecraft:cachecraft@postgres:5432/cachecraft?sslmode=disable
+      REDIS_ADDR: redis:6379
+      DB_MAX_CONNS: "20"
+      DB_CONN_TIMEOUT_MS: "2000"
+      DEFAULT_TTL_SECONDS: "30"
+      DEFAULT_JITTER: "0.10"
+      LOCK_LEASE_MS: "5000"
+      CACHECRAFT_ENV: local
+    ports: ["8083:8080"]
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on: [api-1, api-2, api-3]
+    ports: ["8080:80"]
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  postgres-data:
+  redis-data:

@@ -1,0 +1,22 @@
+# Git metadata
+.git
+.gitignore
+
+# Local documentation & test artifacts
+docs/
+k6-load-tests/
+bin/
+run-test.sh
+run-test.ps1
+README.md
+
+# Environment files
+.env
+.env.*
+
+# Editor and OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

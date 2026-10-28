@@ -1,0 +1,36 @@
+# Binaries & build artifacts
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Local documentation & private engineering notes
+/docs/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Test outputs and coverage profiles
+*.test
+*.out
+coverage.txt
+
+# Log files
+*.log
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Editor artifacts
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

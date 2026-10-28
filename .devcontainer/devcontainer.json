@@ -1,0 +1,43 @@
+{
+  "name": "CacheCraft Dev Environment",
+  "image": "mcr.microsoft.com/devcontainers/go:1.24-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "enableDockerInDocker": true
+    }
+  },
+  "forwardPorts": [8080, 8081, 8082, 8083],
+  "portsAttributes": {
+    "8080": {
+      "label": "Nginx Load Balancer",
+      "onAutoForward": "notify"
+    },
+    "8081": {
+      "label": "Go API Instance 1",
+      "onAutoForward": "silent"
+    },
+    "8082": {
+      "label": "Go API Instance 2",
+      "onAutoForward": "silent"
+    },
+    "8083": {
+      "label": "Go API Instance 3",
+      "onAutoForward": "silent"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "go.useLanguageServer": true,
+        "go.lintOnSave": "package",
+        "go.formatTool": "gofmt"
+      }
+    }
+  },
+  "postCreateCommand": "curl -sL https://github.com/grafana/k6/releases/download/v0.54.0/k6-v0.54.0-linux-amd64.tar.gz | tar -xz -C /tmp && sudo mv /tmp/k6-v0.54.0-linux-amd64/k6 /usr/local/bin/ && rm -rf /tmp/k6-v0.54.0-linux-amd64"
+}
